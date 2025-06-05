@@ -26,14 +26,14 @@ run-x86_64: $(IMAGE_NAME).iso
 limine/limine:
 	$(MAKE) -C limine
 
-.PHONY: noob-os
-noob-os:
+.PHONY: NoobOS
+NoobOS:
 	$(MAKE) -C noob-os
 
-$(IMAGE_NAME).iso: limine/limine noob-os
+$(IMAGE_NAME).iso: limine/limine NoobOS
 	rm -rf iso_root
 	mkdir -p iso_root/boot
-	cp -v noob-os/noob-os iso_root/boot/
+	cp -v noob-os/NoobOS iso_root/boot/
 	mkdir -p iso_root/boot/limine
 	cp -v limine.conf iso_root/boot/limine/
 	mkdir -p iso_root/EFI/BOOT
@@ -51,6 +51,7 @@ $(IMAGE_NAME).iso: limine/limine noob-os
 .PHONY: clean
 clean:
 	$(MAKE) -C noob-os clean
+	$(MAKE) -C limine clean
 	rm -rf iso_root $(IMAGE_NAME).iso
 
 .PHONY: distclean

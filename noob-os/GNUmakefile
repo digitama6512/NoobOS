@@ -2,10 +2,6 @@
 MAKEFLAGS += -rR
 .SUFFIXES:
 
-# This is the name that our final executable will have.
-# Change as needed.
-override OUTPUT := noob-os
-
 # Convenience macro to reliably declare user overridable variables.
 override USER_VARIABLE = $(if $(filter $(origin $(1)),default undefined),$(eval override $(1) := $(2)))
 
@@ -30,12 +26,13 @@ endif
 all:
 	RUSTFLAGS="-C relocation-model=static" cargo build --target $(RUST_TARGET) --profile $(RUST_PROFILE)
 	cp target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR)/$$(cd target/$(RUST_TARGET)/$(RUST_PROFILE_SUBDIR) && find -maxdepth 1 -perm -111 -type f) noob-os
+	mv noob-os NoobOS
 
 # Remove object files and the final executable.
 .PHONY: clean
 clean:
 	cargo clean
-	rm -rf noob-os
+	rm -rf NoobOS
 
 .PHONY: distclean
 distclean: clean
