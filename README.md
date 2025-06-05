@@ -11,5 +11,5 @@
 ## 运行
 
 ```bash
-make make run-x86_64
+make run-x86_64
 ```
