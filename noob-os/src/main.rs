@@ -56,15 +56,22 @@ unsafe extern "C" fn kmain() -> ! {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             for char_index in 0..11 {
+                // 选择一个字体
                 let char_data = FONT_8X8[char_index];
                 for row in 0..8 {
                     for col in 0..8 {
+                        // 判断字体位图中第row行第col列是否为 #
                         if (char_data[row] >> (7 - col)) & 1 != 0 {
-                            // 在坐标 (30, 0) 开始画
+                            // row + 30: 在屏幕坐标 (30, 0) 开始画，该字体中 # 在屏幕上对应的行数
+                            // framebuffer.pitch(): 屏幕一行的字节数
+                            // char_index * 8 + col: 该字体中 # 在屏幕上对应的列数
+                            // (char_index * 8 + col) * 4: 一个像素用32bit表示，ARGB
+                            // pixel_offset 为 # 在framebuffer对应的地址偏移
                             let pixel_offset = (row + 30)
                                 * framebuffer.pitch() as usize
                                 + (char_index * 8 + col) * 4;
                             unsafe {
+                                // 在该地址上显示青色
                                 framebuffer
                                     .addr()
                                     .add(pixel_offset as usize)
