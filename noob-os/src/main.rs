@@ -30,29 +30,51 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
+// 字体位图 8x8
+static FONT_8X8: [[u8; 8]; 11] = [
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], // ' '
+    [0x42, 0x42, 0x7E, 0x42, 0x42, 0x00, 0x00, 0x00], // 'H'
+    [0x7E, 0x40, 0x7C, 0x40, 0x7E, 0x00, 0x00, 0x00], // 'E'
+    [0x40, 0x40, 0x40, 0x40, 0x7E, 0x00, 0x00, 0x00], // 'L'
+    [0x40, 0x40, 0x40, 0x40, 0x7E, 0x00, 0x00, 0x00], // 'L'
+    [0x3C, 0x42, 0x42, 0x42, 0x3C, 0x00, 0x00, 0x00], // 'O'
+    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], // ' '
+    [0x42, 0x42, 0x5A, 0x66, 0x42, 0x00, 0x00, 0x00], // 'W'
+    [0x3C, 0x42, 0x42, 0x42, 0x3C, 0x00, 0x00, 0x00], // 'O'
+    [0x7C, 0x42, 0x7C, 0x48, 0x44, 0x00, 0x00, 0x00], // 'R'
+    [0x78, 0x44, 0x42, 0x42, 0x78, 0x00, 0x00, 0x00], // 'D'
+];
+
 // 使用 no_mangle 标记这个函数，来对它禁用名称重整
 #[unsafe(no_mangle)]
 /// `kmain` 程序的入口点，extern "C" 表示这个函数使用C语言的ABI，，使其可以被引导加载程序调用
+/// 在屏幕上显示 hello world
 unsafe extern "C" fn kmain() -> ! {
     assert!(BASE_REVISION.is_supported());
 
-    // 这段代码会在屏幕的 左上角 绘制一条 白色对角线（从 (0, 0) 到 (99, 99)）
     // 获取帧缓冲区信息
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
-        // 返回一个 迭代器，包含所有可用的帧缓冲区
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            for i in 0..100_u64 {
-                // 选择择坐标 (i, i) 的像素
-                let pixel_offset = i * framebuffer.pitch() + i * 4;
-
-                // 写 0xFFFFFFFF(白色) 到坐标 (i, i) 的像素
-                unsafe {
-                    framebuffer
-                        .addr()
-                        .add(pixel_offset as usize)
-                        .cast::<u32>()
-                        .write(0xFFFFFFFF)
-                };
+            for char_index in 0..11 {
+                let char_data = FONT_8X8[char_index];
+                for row in 0..8 {
+                    for col in 0..8 {
+                        if (char_data[row] >> (7 - col)) & 1 != 0 {
+                            // 在坐标 (30, 0) 开始画
+                            let pixel_offset = (row + 30)
+                                * framebuffer.pitch() as usize
+                                + (char_index * 8 + col) * 4;
+                            unsafe {
+                                framebuffer
+                                    .addr()
+                                    .add(pixel_offset as usize)
+                                    .cast::<u32>()
+                                    // 青色(ARGB)
+                                    .write(0xFF00FFFF)
+                            };
+                        }
+                    }
+                }
             }
         }
     }
