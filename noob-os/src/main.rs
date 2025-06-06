@@ -4,10 +4,12 @@
 #![no_main]
 
 use core::arch::asm;
+use core::ffi::CStr;
 
 use limine::BaseRevision;
+use limine::framebuffer::Framebuffer;
 use limine::request::{
-    FramebufferRequest, RequestsEndMarker, RequestsStartMarker,
+    FramebufferRequest, ModuleRequest, RequestsEndMarker, RequestsStartMarker,
 };
 
 // 强制编译器保留此变量（即使未被显式使用）
@@ -16,6 +18,10 @@ use limine::request::{
 #[unsafe(link_section = ".requests")]
 // 声明内核支持的 Limine 引导协议版本
 static BASE_REVISION: BaseRevision = BaseRevision::new();
+
+#[used]
+#[unsafe(link_section = ".requests")]
+static MOUDULE_REQUEST: ModuleRequest = ModuleRequest::new();
 
 #[used]
 #[unsafe(link_section = ".requests")]
@@ -30,20 +36,46 @@ static _START_MARKER: RequestsStartMarker = RequestsStartMarker::new();
 #[unsafe(link_section = ".requests_end_marker")]
 static _END_MARKER: RequestsEndMarker = RequestsEndMarker::new();
 
-// 字体位图 8x8
-static FONT_8X8: [[u8; 8]; 11] = [
-    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], // ' '
-    [0x42, 0x42, 0x7E, 0x42, 0x42, 0x00, 0x00, 0x00], // 'H'
-    [0x7E, 0x40, 0x7C, 0x40, 0x7E, 0x00, 0x00, 0x00], // 'E'
-    [0x40, 0x40, 0x40, 0x40, 0x7E, 0x00, 0x00, 0x00], // 'L'
-    [0x40, 0x40, 0x40, 0x40, 0x7E, 0x00, 0x00, 0x00], // 'L'
-    [0x3C, 0x42, 0x42, 0x42, 0x3C, 0x00, 0x00, 0x00], // 'O'
-    [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], // ' '
-    [0x42, 0x42, 0x5A, 0x66, 0x42, 0x00, 0x00, 0x00], // 'W'
-    [0x3C, 0x42, 0x42, 0x42, 0x3C, 0x00, 0x00, 0x00], // 'O'
-    [0x7C, 0x42, 0x7C, 0x48, 0x44, 0x00, 0x00, 0x00], // 'R'
-    [0x78, 0x44, 0x42, 0x42, 0x78, 0x00, 0x00, 0x00], // 'D'
-];
+/// `draw_string` 使用limine帧缓冲打印字符串，横着打印
+/// - psf1module: 内核镜像中的psf1文件
+/// - framebuffer: limine帧缓冲
+/// - x: 打印字符串的起始x坐标
+/// - color: 打印字符串的颜色
+unsafe fn draw_string(
+    psf1module: &&limine::file::File,
+    framebuffer: &Framebuffer<'_>,
+    string: &CStr,
+    x: usize,
+    color: u32,
+) {
+    // 跳过psf1文件头部信息
+    let glyphs_ptr = unsafe { psf1module.addr().add(4) };
+    // 每个字形是8x16位图
+    let row_size: usize = 16;
+    let col_size: usize = 8;
+    for (char_count, achar) in string.to_bytes().iter().enumerate() {
+        // 当前字符在psf1文件中的字形
+        let current_glyphs = unsafe { glyphs_ptr.add(16 * (*achar as usize)) };
+
+        for row in 0..row_size {
+            let row_of_glyphs = unsafe { *(current_glyphs.add(row)) };
+            for col in 0..col_size {
+                // 判断字形位图中第row行第col列是否为 #
+                if (row_of_glyphs >> (7 - col)) & 1 != 0 {
+                    let pixel_offset = (row + x) * framebuffer.pitch() as usize
+                        + (char_count * 8 + col) * 4;
+                    unsafe {
+                        framebuffer
+                            .addr()
+                            .add(pixel_offset)
+                            .cast::<u32>()
+                            .write(color)
+                    };
+                }
+            }
+        }
+    }
+}
 
 // 使用 no_mangle 标记这个函数，来对它禁用名称重整
 #[unsafe(no_mangle)]
@@ -55,31 +87,20 @@ unsafe extern "C" fn kmain() -> ! {
     // 获取帧缓冲区信息
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            for char_index in 0..11 {
-                // 选择一个字体
-                let char_data = FONT_8X8[char_index];
-                for row in 0..8 {
-                    for col in 0..8 {
-                        // 判断字体位图中第row行第col列是否为 #
-                        if (char_data[row] >> (7 - col)) & 1 != 0 {
-                            // row + 30: 在屏幕坐标 (30, 0) 开始画，该字体中 # 在屏幕上对应的行数
-                            // framebuffer.pitch(): 屏幕一行的字节数
-                            // char_index * 8 + col: 该字体中 # 在屏幕上对应的列数
-                            // (char_index * 8 + col) * 4: 一个像素用32bit表示，ARGB
-                            // pixel_offset 为 # 在framebuffer对应的地址偏移
-                            let pixel_offset = (row + 30)
-                                * framebuffer.pitch() as usize
-                                + (char_index * 8 + col) * 4;
-                            unsafe {
-                                // 在该地址上显示青色
-                                framebuffer
-                                    .addr()
-                                    .add(pixel_offset as usize)
-                                    .cast::<u32>()
-                                    // 青色(ARGB)
-                                    .write(0xFF00FFFF)
-                            };
-                        }
+            // 获取font
+            if let Some(modules) = MOUDULE_REQUEST.get_response() {
+                for amodule in modules.modules() {
+                    if amodule.string() == c"zap-light16.psf" {
+                        unsafe {
+                            draw_string(
+                                amodule,
+                                &framebuffer,
+                                c"Hello World",
+                                0,
+                                // 青色
+                                0xFF00FFFF,
+                            )
+                        };
                     }
                 }
             }

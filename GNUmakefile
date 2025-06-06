@@ -34,6 +34,7 @@ $(IMAGE_NAME).iso: limine/limine NoobOS
 	rm -rf iso_root
 	mkdir -p iso_root/boot
 	cp -v noob-os/NoobOS iso_root/boot/
+	cp zap-light16.psf iso_root/boot/
 	mkdir -p iso_root/boot/limine
 	cp -v limine.conf iso_root/boot/limine/
 	mkdir -p iso_root/EFI/BOOT
